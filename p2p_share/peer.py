@@ -1,8 +1,6 @@
 """Networking code for one P2P file-sharing peer."""
 
-import socket
-import socketserver
-import threading
+import base64, shutil, socket, hashlib, tempfile, threading, socketserver
 from pathlib import Path
 
 from .config import DISCOVERY_PORT, SOCKET_TIMEOUT
@@ -126,11 +124,21 @@ class Peer:
             query = str(request.get("query", ""))
             return {"status": "ok", "files": self.get_public_files(query)}
 
+        if action == "GET_META":
+            record = self.index.get(str(request["file_id"]))
+            if record is None:
+                return {"status": "error", "message": "file not found"}
+            return {"status": "ok", "file": record.to_public_dict()}
+
+        if action == "GET_CHUNK":
+            return self.send_chunk(request)
+
         return {"status": "error", "message": f"unknown action: {action}"}
 
     def connect(self, host, port):
         """
-        Connect to another peer."""
+        Connect to another peer.
+        """
         response = self.send_request(host, port, {
             "action": "HELLO",
             "port": self.port,
@@ -191,6 +199,119 @@ class Peer:
         """
         if response.get("status") != "ok":
             raise ValueError(str(response.get("message", "peer returned an error")))
+        
+    def send_chunk(self, request):
+        """
+        Send one file chunk to another peer.
+
+        :param request: dict with "file_id" and "chunk_index" keys.
+        :return: dict with status, chunk index, base64-encoded data, and sha256 hex digest keys.
+        """
+        file_id = str(request["file_id"])
+        chunk_number = int(request["chunk_index"])
+        record = self.index.get(file_id)
+
+        if record is None:
+            return {"status": "error", "message": "file not found"}
+
+        if chunk_number < 0 or chunk_number >= record.chunks:
+            return {"status": "error", "message": "chunk index out of range"}
+        chunk = self.index.chunk(file_id, chunk_number)
+
+        return {
+            "status": "ok",
+            "chunk_index": chunk_number,
+            "data": base64.b64encode(chunk).decode("ascii"),
+            "sha256": hashlib.sha256(chunk).hexdigest(),
+        }
+
+
+    def download_chunk(self, host, port, file_id, chunk_number):
+        """
+        Download one chunk from another peer.
+
+        :param host: peer host to connect to.
+        :param port: peer port to connect to.
+        :param file_id: ID of file to download from peer.
+        :param chunk_number: index of chunk to download.
+        :return: bytes of downloaded chunk.
+        """
+        response = self.send_request(host, port, {
+            "action": "GET_CHUNK",
+            "file_id": file_id,
+            "chunk_index": chunk_number,
+        })
+        self.check_response(response)
+
+        chunk = base64.b64decode(str(response["data"]).encode("ascii"))
+        peer_hash = str(response["sha256"])
+
+        if hashlib.sha256(chunk).hexdigest() != peer_hash:
+            raise ValueError(f"peer sent bad chunk {chunk_number}")
+
+        return chunk
+
+
+    def download(self, host, port, file_id):
+        """
+        Download a file from another peer.
+
+        :param host: peer host to connect to.
+        :param port: peer port to connect to.
+        :param file_id: ID of file to download from peer.
+        :return: path to downloaded file.
+        """
+        response = self.send_request(host, port, {
+            "action": "GET_META",
+            "file_id": file_id,
+        })
+        self.check_response(response)
+
+        metadata = response["file"]
+        target_path = self.safe_download_path(str(metadata["relative_path"]))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        expected_file_hash = str(metadata["sha256"])
+        expected_chunk_hashes = list(metadata["chunk_hashes"])
+        total_chunks = int(metadata["chunks"])
+        final_hash = hashlib.sha256()
+
+        with tempfile.NamedTemporaryFile(delete=False, dir=target_path.parent) as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                for chunk_number in range(total_chunks):
+                    chunk = self.download_chunk(host, port, file_id, chunk_number)
+                    chunk_hash = hashlib.sha256(chunk).hexdigest()
+                    if chunk_hash != expected_chunk_hashes[chunk_number]:
+                        raise ValueError(f"chunk {chunk_number} failed hash check")
+                    temp_file.write(chunk)
+                    final_hash.update(chunk)
+            except Exception:
+                temp_file.close()
+                temp_path.unlink(missing_ok=True)
+                raise
+
+        if final_hash.hexdigest() != expected_file_hash:
+            temp_path.unlink(missing_ok=True)
+            raise ValueError("downloaded file failed final hash check")
+        shutil.move(str(temp_path), target_path)
+
+        return target_path
+
+
+    def safe_download_path(self, relative_path):
+        """
+        Make sure downloads stay inside downloads folder.
+
+        :param relative_path: path relative to downloads folder returned by peer.
+        :return: absolute path to target file.
+        """
+        target = (self.download_dir / relative_path).resolve()
+        root = self.download_dir.resolve()
+        if root != target and root not in target.parents:
+            raise ValueError("peer returned unsafe download path")
+
+        return target
 
 
 def peer_label(host, port):

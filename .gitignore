@@ -1,2 +1,11 @@
+__pycache__/
+*.py[cod]
 .venv/
 venv/
+downloads/
+shared/
+downloads_*/
+shared_*/
+docs/_build/
+*.zip
+*.tmp
