@@ -263,13 +263,14 @@ class Peer:
 
         return chunk
 
-    def download(self, host, port, file_id):
+    def download(self, host, port, file_id, progress_callback=None):
         """
         Download a file from another peer.
 
         :param host: peer host to connect to.
         :param port: peer port to connect to.
         :param file_id: ID of file to download from peer.
+        :param progress_callback: function to call with download progress.
         :return: path to downloaded file.
         """
         response = self.send_request(host, port, {
@@ -297,6 +298,8 @@ class Peer:
                         raise ValueError(f"chunk {chunk_number} failed hash check")
                     temp_file.write(chunk)
                     final_hash.update(chunk)
+                    if progress_callback is not None:
+                        progress_callback(chunk_number + 1, total_chunks)
             except Exception:
                 temp_file.close()
                 temp_path.unlink(missing_ok=True)

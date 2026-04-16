@@ -88,7 +88,7 @@ def run_prompt(peer):
 
             elif command == "download":
                 require_args(parts, 4)
-                path = peer.download(parts[1], int(parts[2]), parts[3])
+                path = peer.download(parts[1], int(parts[2]), parts[3], progress_callback=print_progress)
                 print(f"Downloaded to {path}.")
 
             elif command == "discover":
@@ -146,6 +146,19 @@ def print_search_results(results):
             f"{index}. {item['relative_path']} | {item['size']} bytes | "
             f"peer={item['peer']} | id={item['file_id']}"
         )
+
+
+def print_progress(done, total):
+    """
+    Print progress bar for downloads.
+
+    :param done: number of chunks downloaded so far.
+    :param total: total number of chunks to download.
+    """
+    percent = int((done / total) * 100)
+    filled = int(percent / 10)
+    bar = "#" * filled + "-" * (10 - filled)
+    print(f"Downloading: [{bar}] {percent}% ({done}/{total} chunks)")
 
 
 if __name__ == "__main__":
