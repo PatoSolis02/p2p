@@ -10,7 +10,6 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """
     A TCP server that handles each connection in a thread.
     """
-
     allow_reuse_address = True
     daemon_threads = True
 
@@ -21,14 +20,15 @@ class PeerRequestHandler(socketserver.BaseRequestHandler):
     """
 
     def handle(self):
+        """
+        Handle one request from another peer.
+        """
         peer = self.server.peer
-
         try:
             request = receive_message(self.request)
             response = peer.handle_request(request, self.client_address[0])
         except (OSError, ProtocolError, ValueError, KeyError) as exc:
             response = {"status": "error", "message": str(exc)}
-
         send_message(self.request, response)
 
 
@@ -61,7 +61,7 @@ class Peer:
 
     def start(self):
         """
-        Start the TCP peer server.
+        Start TCP peer server.
         """
         self.index.scan()
         self.download_dir.mkdir(parents=True, exist_ok=True)
@@ -85,7 +85,7 @@ class Peer:
 
     def stop(self):
         """
-        Stop the peer.
+        Stop peer.
         """
         if self.udp_socket is not None:
             self.udp_socket.close()
@@ -100,14 +100,13 @@ class Peer:
 
     def add_peer(self, host, port):
         """
-        Save a peer address.
+        Save peer address.
 
         :param host: peer host to add.
         :param port: peer port to add.
         :return: tuple of added peer.
         """
         peer = (host, int(port))
-
         with self.peer_lock:
             self.known_peers.add(peer)
 
@@ -116,6 +115,8 @@ class Peer:
     def get_peers(self):
         """
         Return saved peers.
+
+        :return: sorted list of tuples.
         """
         with self.peer_lock:
             return sorted(self.known_peers)
@@ -123,6 +124,10 @@ class Peer:
     def handle_request(self, request, remote_host):
         """
         Handle one JSON command.
+
+        :param request: dict with "action" key and other keys depending on action.
+        :param remote_host: host of peer that sent request.
+        :return: dict with "status" key and other keys depending on action.
         """
         action = request.get("action")
 
@@ -151,18 +156,25 @@ class Peer:
     def connect(self, host, port):
         """
         Connect to another peer.
+
+        :param host: peer host to connect to.
+        :param port: peer port to connect to.
+        :return: tuple of connected peer.
         """
         response = self.send_request(host, port, {
             "action": "HELLO",
             "port": self.port,
         })
-
         self.check_response(response)
+
         return self.add_peer(host, port)
 
     def search_remote(self, query):
         """
         Search all known peers.
+
+        :param query: search query string.
+        :return: list of dicts with peer and file metadata for each search result.
         """
         results = []
 
@@ -189,6 +201,9 @@ class Peer:
     def get_public_files(self, query=""):
         """
         Return file metadata to send to another peer.
+
+        :param query: optional search query string to filter results.
+        :return: list of dicts with file metadata for each matching file.
         """
         if query:
             records = self.index.search(query)
@@ -200,6 +215,11 @@ class Peer:
     def send_request(self, host, port, message):
         """
         Send one request to another peer.
+
+        :param host: peer host to connect to.
+        :param port: peer port to connect to.
+        :param message: dict to send as JSON command.
+        :return: dict response from peer.
         """
         with socket.create_connection((host, int(port)), timeout=SOCKET_TIMEOUT) as sock:
             sock.settimeout(SOCKET_TIMEOUT)
@@ -208,7 +228,9 @@ class Peer:
 
     def check_response(self, response):
         """
-        Raise an error if another peer returned an error.
+        Raise error if another peer returned an error.
+
+        :param response: dict response from peer.
         """
         if response.get("status") != "ok":
             raise ValueError(str(response.get("message", "peer returned an error")))
@@ -394,5 +416,9 @@ class Peer:
 def peer_label(host, port):
     """
     Format a peer address.
+
+    :param host: peer host.
+    :param port: peer port.
+    :return: string label for peer.
     """
     return f"{host}:{port}"
