@@ -1,6 +1,7 @@
 """Helpers for sending JSON messages over sockets."""
 
 import json
+
 from .config import MAX_MESSAGE_SIZE
 
 class ProtocolError(Exception):
@@ -12,7 +13,7 @@ def send_message(sock, message):
     """
     Send one JSON message ending with a newline.
     """
-    
+
     data = json.dumps(message).encode("utf-8") + b"\n"
 
     if len(data) > MAX_MESSAGE_SIZE:
