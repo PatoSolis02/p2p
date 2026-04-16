@@ -16,6 +16,7 @@ HELP_TEXT = """Commands:
   connect <host> <port>        connect to a peer
   search <query>               search known peers
   download <host> <port> <id>  download a file
+  discover                     broadcast a discovery message
   quit                         stop the peer
 """
 
@@ -89,6 +90,10 @@ def run_prompt(peer):
                 require_args(parts, 4)
                 path = peer.download(parts[1], int(parts[2]), parts[3])
                 print(f"Downloaded to {path}.")
+
+            elif command == "discover":
+                peer.broadcast_discovery()
+                print("Discovery broadcast sent.")
 
             else:
                 print(f"Unknown command: {command}. Type 'help' for options.")

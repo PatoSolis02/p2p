@@ -1,6 +1,4 @@
-"""Networking code for one P2P file-sharing peer."""
-
-import base64, shutil, socket, hashlib, tempfile, threading, socketserver
+import json, time, base64, shutil, socket, hashlib, tempfile, threading, socketserver
 from pathlib import Path
 
 from .config import DISCOVERY_PORT, SOCKET_TIMEOUT
@@ -78,10 +76,21 @@ class Peer:
         thread = threading.Thread(target=self.tcp_server.serve_forever, daemon=True)
         thread.start()
 
+        if self.discovery_port > 0:
+            try:
+                self.start_discovery_listener()
+                self.broadcast_discovery()
+            except OSError:
+                self.udp_socket = None
+
     def stop(self):
         """
         Stop the peer.
         """
+        if self.udp_socket is not None:
+            self.udp_socket.close()
+            self.udp_socket = None
+
         self.stop_event.set()
 
         if self.tcp_server is not None:
@@ -92,6 +101,10 @@ class Peer:
     def add_peer(self, host, port):
         """
         Save a peer address.
+
+        :param host: peer host to add.
+        :param port: peer port to add.
+        :return: tuple of added peer.
         """
         peer = (host, int(port))
 
@@ -225,7 +238,6 @@ class Peer:
             "sha256": hashlib.sha256(chunk).hexdigest(),
         }
 
-
     def download_chunk(self, host, port, file_id, chunk_number):
         """
         Download one chunk from another peer.
@@ -250,7 +262,6 @@ class Peer:
             raise ValueError(f"peer sent bad chunk {chunk_number}")
 
         return chunk
-
 
     def download(self, host, port, file_id):
         """
@@ -298,7 +309,6 @@ class Peer:
 
         return target_path
 
-
     def safe_download_path(self, relative_path):
         """
         Make sure downloads stay inside downloads folder.
@@ -312,6 +322,70 @@ class Peer:
             raise ValueError("peer returned unsafe download path")
 
         return target
+    
+    def broadcast_discovery(self):
+        """
+        Send a UDP discovery message.
+        """
+        if self.discovery_port <= 0:
+            return
+
+        message = json.dumps({
+            "service": "p2p-share",
+            "port": self.port,
+        }).encode("utf-8")
+
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+            udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            for host in ("255.255.255.255", "127.0.0.1"):
+                try:
+                    udp.sendto(message, (host, self.discovery_port))
+                except OSError:
+                    pass
+
+    def start_discovery_listener(self):
+        """
+        Start listening for UDP discovery messages.
+        """
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.udp_socket.bind(("", self.discovery_port))
+        self.udp_socket.settimeout(0.5)
+
+        thread = threading.Thread(target=self.discovery_loop, daemon=True)
+        thread.start()
+
+    def discovery_loop(self):
+        """
+        Listen for other peers.
+        """
+        while not self.stop_event.is_set():
+            try:
+                payload, address = self.udp_socket.recvfrom(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            try:
+                message = json.loads(payload.decode("utf-8"))
+            except json.JSONDecodeError:
+                continue
+
+            if message.get("service") != "p2p-share":
+                continue
+
+            port = int(message.get("port", 0))
+            if port <= 0:
+                continue
+            if port == self.port and address[0] in {"127.0.0.1", self.host}:
+                continue
+
+            self.add_peer(address[0], port)
+            try:
+                self.connect(address[0], port)
+            except (OSError, ProtocolError, ValueError):
+                time.sleep(0.1)
 
 
 def peer_label(host, port):
