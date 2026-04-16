@@ -17,6 +17,8 @@ HELP_TEXT = """Commands:
   search <query>               search known peers
   download <host> <port> <id>  download a file
   discover                     broadcast a discovery message
+  message <host> <port> <text> send a chat message
+  messages                     show received messages
   quit                         stop the peer
 """
 
@@ -95,6 +97,14 @@ def run_prompt(peer):
                 peer.broadcast_discovery()
                 print("Discovery broadcast sent.")
 
+            elif command == "message":
+                require_args(parts, 4)
+                peer.send_chat(parts[1], int(parts[2]), " ".join(parts[3:]))
+                print("Message sent.")
+
+            elif command == "messages":
+                print_messages(peer)
+
             else:
                 print(f"Unknown command: {command}. Type 'help' for options.")
 
@@ -159,6 +169,16 @@ def print_progress(done, total):
     filled = int(percent / 10)
     bar = "#" * filled + "-" * (10 - filled)
     print(f"Downloading: [{bar}] {percent}% ({done}/{total} chunks)")
+
+def print_messages(peer):
+    messages = peer.get_messages()
+
+    if not messages:
+        print("No messages received.")
+        return
+
+    for index, message in enumerate(messages, start=1):
+        print(f"{index}. From {message['from']}: {message['message']}")
 
 
 if __name__ == "__main__":

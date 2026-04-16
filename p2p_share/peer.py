@@ -59,6 +59,9 @@ class Peer:
         self.udp_socket = None
         self.stop_event = threading.Event()
 
+        self.messages = []
+        self.message_lock = threading.Lock()
+
     def start(self):
         """
         Start TCP peer server.
@@ -141,6 +144,13 @@ class Peer:
         if action == "SEARCH":
             query = str(request.get("query", ""))
             return {"status": "ok", "files": self.get_public_files(query)}
+        
+        if action == "CHAT":
+            text = str(request.get("message", ""))
+            sender_port = int(request.get("port", 0))
+            sender = peer_label(remote_host, sender_port)
+            self.save_message(sender, text)
+            return {"status": "ok"}
 
         if action == "GET_META":
             record = self.index.get(str(request["file_id"]))
@@ -411,6 +421,31 @@ class Peer:
                 self.connect(address[0], port)
             except (OSError, ProtocolError, ValueError):
                 time.sleep(0.1)
+    
+    def send_chat(self, host, port, text):
+            """Send a chat message to another peer."""
+            response = self.send_request(host, port, {
+                "action": "CHAT",
+                "port": self.port,
+                "message": text,
+            })
+
+            self.check_response(response)
+
+
+    def save_message(self, sender, text):
+        """Save a received message."""
+        with self.message_lock:
+            self.messages.append({
+                "from": sender,
+                "message": text,
+            })
+
+
+    def get_messages(self):
+        """Return received messages."""
+        with self.message_lock:
+            return list(self.messages)
 
 
 def peer_label(host, port):
