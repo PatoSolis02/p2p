@@ -145,6 +145,10 @@ class Peer:
             query = str(request.get("query", ""))
             return {"status": "ok", "files": self.get_public_files(query)}
         
+        if action == "SEARCH_TYPE":
+            file_type = str(request.get("file_type", ""))
+            return {"status": "ok", "files": self.get_files_by_type(file_type)}
+
         if action == "CHAT":
             text = str(request.get("message", ""))
             sender_port = int(request.get("port", 0))
@@ -423,29 +427,78 @@ class Peer:
                 time.sleep(0.1)
     
     def send_chat(self, host, port, text):
-            """Send a chat message to another peer."""
-            response = self.send_request(host, port, {
-                "action": "CHAT",
-                "port": self.port,
-                "message": text,
-            })
+        """
+        Send a chat message to another peer.
 
-            self.check_response(response)
+        :param host: peer host to connect to.
+        :param port: peer port to connect to.
+        :param text: message text to send.
+        """
+        response = self.send_request(host, port, {
+            "action": "CHAT",
+            "port": self.port,
+            "message": text,
+        })
 
+        self.check_response(response)
 
     def save_message(self, sender, text):
-        """Save a received message."""
-        with self.message_lock:
-            self.messages.append({
-                "from": sender,
-                "message": text,
-            })
+        """
+        Save a received message.
 
+        :param sender: string label of peer that sent message.
+        :param text: message text to save.
+        """
+        with self.message_lock:
+            self.messages.append({"from": sender, "message": text,})
 
     def get_messages(self):
-        """Return received messages."""
+        """
+        Return received messages.
+
+        :return: list of dicts with "from" and "message" keys.
+        """
         with self.message_lock:
             return list(self.messages)
+        
+    def search_type_remote(self, file_type):
+        """
+        Search known peers by file extension.
+
+        :param file_type: file extension to search for.
+        :return: list of dicts with peer and file metadata for each search result.
+        """
+        results = []
+
+        for host, port in self.get_peers():
+            try:
+                response = self.send_request(host, port, {
+                    "action": "SEARCH_TYPE",
+                    "file_type": file_type,
+                })
+                self.check_response(response)
+            except (OSError, ProtocolError, ValueError) as exc:
+                results.append({"peer": peer_label(host, port), "error": str(exc)})
+                continue
+
+            for item in response.get("files", []):
+                item = dict(item)
+                item["peer"] = peer_label(host, port)
+                item["peer_host"] = host
+                item["peer_port"] = port
+                results.append(item)
+
+        return results
+
+    def get_files_by_type(self, file_type):
+        """
+        Return local files matching an extension.
+
+        :param file_type: file extension to search for.
+        :return: list of dicts with file metadata.
+        """
+        records = self.index.search_by_type(file_type)
+        return [record.to_public_dict() for record in records]
 
 
 def peer_label(host, port):

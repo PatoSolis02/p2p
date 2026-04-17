@@ -1,7 +1,4 @@
-"""Command-line interface for the P2P file-sharing app."""
-
-import argparse
-import shlex
+import shlex, argparse
 from pathlib import Path
 
 from .config import DEFAULT_HOST, DEFAULT_PORT
@@ -19,11 +16,16 @@ HELP_TEXT = """Commands:
   discover                     broadcast a discovery message
   message <host> <port> <text> send a chat message
   messages                     show received messages
+  type <extension>             search by file type
   quit                         stop the peer
 """
 
 
 def build_parser():
+    """
+    Build command line argument parser.
+    :return: argparse.ArgumentParser instance.
+    """
     parser = argparse.ArgumentParser(description="Simple P2P file sharing peer")
     parser.add_argument("--shared-dir", type=Path, default=Path("shared"))
     parser.add_argument("--download-dir", type=Path, default=Path("downloads"))
@@ -33,6 +35,9 @@ def build_parser():
 
 
 def main():
+    """
+    Main function to run primary logic of the script.
+    """
     args = build_parser().parse_args()
     peer = Peer(args.shared_dir, args.download_dir, args.host, args.port)
     peer.start()
@@ -49,6 +54,11 @@ def main():
 
 
 def run_prompt(peer):
+    """
+    Run command prompt loop for user interaction.
+
+    :param peer: peer instance to interact with.
+    """
     while True:
         try:
             raw = input("p2p> ").strip()
@@ -61,65 +71,66 @@ def run_prompt(peer):
 
         parts = shlex.split(raw)
         command = parts[0].lower()
-
         try:
             if command in {"quit", "exit"}:
                 break
 
             if command == "help":
                 print(HELP_TEXT)
-
             elif command == "peers":
                 print_peers(peer)
-
             elif command == "scan":
                 count = len(peer.index.scan())
                 print(f"Indexed {count} file(s).")
-
             elif command == "files":
                 print_files(peer)
-
             elif command == "connect":
                 require_args(parts, 3)
                 connected = peer.connect(parts[1], int(parts[2]))
                 print(f"Connected to {peer_label(connected[0], connected[1])}.")
-
             elif command == "search":
                 require_args(parts, 2)
                 print_search_results(peer.search_remote(" ".join(parts[1:])))
-
             elif command == "download":
                 require_args(parts, 4)
                 path = peer.download(parts[1], int(parts[2]), parts[3], progress_callback=print_progress)
                 print(f"Downloaded to {path}.")
-
             elif command == "discover":
                 peer.broadcast_discovery()
                 print("Discovery broadcast sent.")
-
             elif command == "message":
                 require_args(parts, 4)
                 peer.send_chat(parts[1], int(parts[2]), " ".join(parts[3:]))
                 print("Message sent.")
-
             elif command == "messages":
                 print_messages(peer)
-
+            elif command == "type":
+                require_args(parts, 2)
+                print_search_results(peer.search_type_remote(parts[1]))
             else:
                 print(f"Unknown command: {command}. Type 'help' for options.")
-
         except Exception as exc:
             print(f"Error: {exc}")
 
 
 def require_args(parts, minimum):
+    """
+    Helper to require a minimum number of command arguments.
+
+    :param parts: list of command parts.
+    :param minimum: minimum number of parts required.
+    :raises ValueError: if not enough parts are provided.
+    """
     if len(parts) < minimum:
         raise ValueError("missing command argument")
 
 
 def print_peers(peer):
+    """
+    Print known peers.
+    :param peer: peer instance to get peers from.
+    """
     peers = peer.get_peers()
-
     if not peers:
         print("No peers known yet.")
         return
@@ -129,8 +140,12 @@ def print_peers(peer):
 
 
 def print_files(peer):
+    """
+    Print local shared files.
+    
+    :param peer: peer instance to get files from.
+    """
     files = peer.index.all_files()
-
     if not files:
         print("No local files indexed.")
         return
@@ -143,6 +158,11 @@ def print_files(peer):
 
 
 def print_search_results(results):
+    """
+    Print search results from remote peers.
+    
+    :param results: list of dicts with peer and file metadata for each search result.
+    """
     if not results:
         print("No matches found.")
         return
@@ -170,9 +190,14 @@ def print_progress(done, total):
     bar = "#" * filled + "-" * (10 - filled)
     print(f"Downloading: [{bar}] {percent}% ({done}/{total} chunks)")
 
-def print_messages(peer):
-    messages = peer.get_messages()
 
+def print_messages(peer):
+    """
+    Print received chat messages.
+    
+    :param peer: peer instance to get messages from.
+    """
+    messages = peer.get_messages()
     if not messages:
         print("No messages received.")
         return

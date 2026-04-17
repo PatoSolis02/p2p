@@ -125,3 +125,23 @@ class FileIndex:
             chunk_size=self.chunk_size,
             chunk_hashes=tuple(chunk_hashes),
         )
+    
+    def search_by_type(self, file_type):
+        """
+        Search files by extension.
+
+        :param file_type: file extension to search for.
+        :return: list of FileRecord objects matching the file type.
+        """
+        extension = file_type.lower().strip()
+
+        if not extension:
+            return self.all_files()
+        if not extension.startswith("."):
+            extension = "." + extension
+
+        return [
+            record
+            for record in self.all_files()
+            if Path(record.name).suffix.lower() == extension
+        ]
