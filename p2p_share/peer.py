@@ -62,6 +62,7 @@ class Peer:
         self.messages = []
         self.message_lock = threading.Lock()
 
+
     def start(self):
         """
         Start TCP peer server.
@@ -86,6 +87,7 @@ class Peer:
             except OSError:
                 self.udp_socket = None
 
+
     def stop(self):
         """
         Stop peer.
@@ -101,6 +103,7 @@ class Peer:
             self.tcp_server.server_close()
             self.tcp_server = None
 
+
     def add_peer(self, host, port):
         """
         Save peer address.
@@ -115,6 +118,7 @@ class Peer:
 
         return peer
 
+
     def get_peers(self):
         """
         Return saved peers.
@@ -123,6 +127,7 @@ class Peer:
         """
         with self.peer_lock:
             return sorted(self.known_peers)
+
 
     def handle_request(self, request, remote_host):
         """
@@ -167,6 +172,7 @@ class Peer:
 
         return {"status": "error", "message": f"unknown action: {action}"}
 
+
     def connect(self, host, port):
         """
         Connect to another peer.
@@ -182,6 +188,7 @@ class Peer:
         self.check_response(response)
 
         return self.add_peer(host, port)
+
 
     def search_remote(self, query):
         """
@@ -212,6 +219,7 @@ class Peer:
 
         return results
 
+
     def get_public_files(self, query=""):
         """
         Return file metadata to send to another peer.
@@ -225,6 +233,7 @@ class Peer:
             records = self.index.all_files()
 
         return [record.to_public_dict() for record in records]
+
 
     def send_request(self, host, port, message):
         """
@@ -240,6 +249,7 @@ class Peer:
             send_message(sock, message)
             return receive_message(sock)
 
+
     def check_response(self, response):
         """
         Raise error if another peer returned an error.
@@ -248,7 +258,8 @@ class Peer:
         """
         if response.get("status") != "ok":
             raise ValueError(str(response.get("message", "peer returned an error")))
-        
+
+
     def send_chunk(self, request):
         """
         Send one file chunk to another peer.
@@ -259,7 +270,6 @@ class Peer:
         file_id = str(request["file_id"])
         chunk_number = int(request["chunk_index"])
         record = self.index.get(file_id)
-
         if record is None:
             return {"status": "error", "message": "file not found"}
 
@@ -273,6 +283,7 @@ class Peer:
             "data": base64.b64encode(chunk).decode("ascii"),
             "sha256": hashlib.sha256(chunk).hexdigest(),
         }
+
 
     def download_chunk(self, host, port, file_id, chunk_number):
         """
@@ -293,11 +304,11 @@ class Peer:
 
         chunk = base64.b64decode(str(response["data"]).encode("ascii"))
         peer_hash = str(response["sha256"])
-
         if hashlib.sha256(chunk).hexdigest() != peer_hash:
             raise ValueError(f"peer sent bad chunk {chunk_number}")
 
         return chunk
+
 
     def download(self, host, port, file_id, progress_callback=None):
         """
@@ -323,7 +334,6 @@ class Peer:
         expected_chunk_hashes = list(metadata["chunk_hashes"])
         total_chunks = int(metadata["chunks"])
         final_hash = hashlib.sha256()
-
         with tempfile.NamedTemporaryFile(delete=False, dir=target_path.parent) as temp_file:
             temp_path = Path(temp_file.name)
             try:
@@ -348,6 +358,7 @@ class Peer:
 
         return target_path
 
+
     def safe_download_path(self, relative_path):
         """
         Make sure downloads stay inside downloads folder.
@@ -361,7 +372,8 @@ class Peer:
             raise ValueError("peer returned unsafe download path")
 
         return target
-    
+
+
     def broadcast_discovery(self):
         """
         Send a UDP discovery message.
@@ -382,6 +394,7 @@ class Peer:
                 except OSError:
                     pass
 
+
     def start_discovery_listener(self):
         """
         Start listening for UDP discovery messages.
@@ -393,6 +406,7 @@ class Peer:
 
         thread = threading.Thread(target=self.discovery_loop, daemon=True)
         thread.start()
+
 
     def discovery_loop(self):
         """
@@ -425,7 +439,8 @@ class Peer:
                 self.connect(address[0], port)
             except (OSError, ProtocolError, ValueError):
                 time.sleep(0.1)
-    
+
+
     def send_chat(self, host, port, text):
         """
         Send a chat message to another peer.
@@ -442,6 +457,7 @@ class Peer:
 
         self.check_response(response)
 
+
     def save_message(self, sender, text):
         """
         Save a received message.
@@ -452,6 +468,7 @@ class Peer:
         with self.message_lock:
             self.messages.append({"from": sender, "message": text,})
 
+
     def get_messages(self):
         """
         Return received messages.
@@ -460,7 +477,8 @@ class Peer:
         """
         with self.message_lock:
             return list(self.messages)
-        
+
+
     def search_type_remote(self, file_type):
         """
         Search known peers by file extension.
@@ -489,6 +507,7 @@ class Peer:
                 results.append(item)
 
         return results
+
 
     def get_files_by_type(self, file_type):
         """
